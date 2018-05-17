@@ -1,40 +1,66 @@
 package rxracecondition;
 
 import android.app.Activity;
+import android.app.Fragment;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
-
-import io.reactivex.Single;
-import io.reactivex.android.schedulers.AndroidSchedulers;
-import io.reactivex.schedulers.Schedulers;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
 
 public class MainActivity extends Activity {
 
     private static final String TAG = "RxRaceCondition";
 
+    private enum Phase { CREATE_FRAGMENT, CREATE_VIEW, RESUME, PAUSE, DESTROY_VIEW }
+
+    private Phase phase = Phase.CREATE_FRAGMENT;
+    private Fragment fragment;
+    private ViewGroup container;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        findViewById(R.id.button_test).setOnClickListener(v -> testSingleFromCallable());
+        findViewById(R.id.button_test).setOnClickListener(v -> repeatExerciseFragmentLifecycle());
+        container = new LinearLayout(this);
     }
 
     Handler repeatHandler = new Handler();
-    int callCount = 0;
+    int resumeCount = 0;
 
-    void testSingleFromCallable() {
-        if ((++callCount % 1000) == 0) {
-            Log.d(TAG, "called " + callCount + " times");
+    void repeatExerciseFragmentLifecycle() {
+        switch (phase) {
+            case CREATE_FRAGMENT:
+                fragment = new TestFragment();
+                fragment.onCreate(null);
+                phase = Phase.CREATE_VIEW;
+                break;
+            case CREATE_VIEW:
+                View view = fragment.onCreateView(getLayoutInflater(), container, null);
+                fragment.onViewCreated(view, null);
+                container.addView(view);
+                phase = Phase.RESUME;
+                break;
+            case RESUME:
+                if ((++resumeCount % 1000) == 0) {
+                    Log.d(TAG, "resumed " + resumeCount + " times");
+                }
+                fragment.onResume();
+                phase = Phase.PAUSE;
+                break;
+            case PAUSE:
+                fragment.onPause();
+                phase = Phase.DESTROY_VIEW;
+                break;
+            case DESTROY_VIEW:
+                fragment.onDestroyView();
+                container.removeAllViews();
+                phase = Phase.CREATE_VIEW;
+                break;
         }
-        Single.fromCallable(Object::new)
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .doOnDispose(() -> repeatHandler.post(this::testSingleFromCallable))
-                .subscribe(object -> {
-                    throw new IllegalStateException("should never be called");
-                })
-                .dispose();
+        repeatHandler.post(this::repeatExerciseFragmentLifecycle);
     }
 
     @Override
